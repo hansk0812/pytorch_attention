@@ -286,10 +286,10 @@ class EnTamV2Dataset(Dataset):
             except KeyError:
                 np_tgt[idx] = self.tam_vocabulary[self.reserved_tokens[self.UNK_IDX]]
         
-        src_mask = [0 for x in eng if x!=self.reserved_tokens[self.PAD_IDX] else 1]
+        src_mask = [0 if x!=self.reserved_tokens[self.PAD_IDX] else 1 for x in eng]
         src_mask = np.array(src_mask)
 
-        tgt_mask = [0 for x in tam if x!=self.reserved_tokens[self.PAD_IDX] else 1]
+        tgt_mask = [0 if x!=self.reserved_tokens[self.PAD_IDX] else 1 for x in tam]
         tgt_mask = np.array(tgt_mask)
 
         return np.int32(np_src), np_tgt, src_mask, tgt_mask
