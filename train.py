@@ -7,16 +7,21 @@ import load_data
 
 from dataset import EnTamV2Dataset, BucketingBatchSampler
 
-from model_multilayer import EncoderDecoder
+from model_multilayer_word2vec import EncoderDecoder
+#from model_multilayer import EncoderDecoder
 #from model import EncoderDecoder
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 def train(train_dataloader, model, n_epochs, PAD_idx, learning_rate=0.0003):
     optimizer = optim.Adam(model.parameters(), lr=learning_rate)
-    criterion = nn.NLLLoss() #ignore_index=PAD_idx)
+    criterion = nn.NLLLoss(ignore_index=PAD_idx)
     #criterion = nn.CrossEntropyLoss(ignore_index=PAD_idx)
+    
+    if not os.path.isdir("trained_models"):
+        os.mkdir("trained_models")
 
+    min_loss = float('inf')
     for epoch in range(1, n_epochs + 1):
         loss = 0
         for iter, batch in enumerate(train_dataloader):
@@ -29,6 +34,12 @@ def train(train_dataloader, model, n_epochs, PAD_idx, learning_rate=0.0003):
                                model, optimizer, criterion)
         print('Epoch {} Loss {}'.format(epoch, loss / iter))
         
+        epoch_loss = loss/float(len(train_dataloader)*len(batch[0]))
+        # serialization
+        if epoch % 10 == 0 or epoch_loss < min_loss:
+            torch.save(model.state_dict(), "trained_models/MatthewHausknecht_epoch%d_loss%.5f.pt" % (epoch, epoch_loss))
+            min_loss = epoch_loss
+
         # add gradient clipping
         for param in model._parameters:
             model._parameters[param] = torch.clip(model._parameters[param], min=-5, max=5) 
@@ -67,6 +78,7 @@ def greedy_decode(model, dataloader):
                 print('Input:  {}'.format(input_sent))
                 print('Target: {}'.format(target_sent))
                 print('Output: {}'.format(output_sent))
+                print()
 
 
 if __name__ == '__main__':
@@ -79,6 +91,7 @@ if __name__ == '__main__':
     ap.add_argument("--morphemes", "-m", help="Morphemes flag for morphological analysis", action="store_true")
     ap.add_argument("--batch_size", "-b", help="Batch size (int)", type=int, default=64)
     ap.add_argument("--num_layers", "-n", help="Number of RNN layers (int)", type=int, default=3)
+    ap.add_argument("--n_epochs", "-ne", help="Number of training epochs (int)", type=int, default=500)
     args = ap.parse_args()
    
     train_dataset = EnTamV2Dataset("train", symbols=not args.nosymbols, verbose=args.verbose, morphemes=args.morphemes, start_stop_tokens=not args.no_start_stop)
@@ -106,7 +119,21 @@ if __name__ == '__main__':
     hidden_size = 256
     input_size = len(eng_vocab)
     output_size = len(tam_vocab)
+    
+    train_dataset.eng_embedding = torch.tensor(train_dataset.eng_embedding).to(device)
+    train_dataset.tam_embedding = torch.tensor(train_dataset.tam_embedding).to(device)
+    model = EncoderDecoder(hidden_size, input_size, output_size, num_layers=args.num_layers,
+                            weights=(train_dataset.eng_embedding, train_dataset.tam_embedding)).to(device)
+    
+    import glob
+    import os
 
-    model = EncoderDecoder(hidden_size, input_size, output_size, num_layers=args.num_layers).to(device)
-    train(val_dataloader, model, n_epochs=20, PAD_idx=PAD_idx)
+    model_chkpts = glob.glob("trained_models/*")
+    if len(model_chkpts) > 0:
+        model_chkpts = sorted(model_chkpts, reverse=True, key=lambda x: float(x.split('loss')[1].split('.pt')[0]))
+        model.load_state_dict(torch.load(model_chkpts[-1]))
+        
+        print ("Loaded model from file: %s" % model_chkpts[-1])
+
+    train(val_dataloader, model, n_epochs=args.n_epochs, PAD_idx=PAD_idx)
     greedy_decode(model, val_dataloader)

@@ -6,15 +6,17 @@ import torch.nn.functional as F
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 class EncoderRNN(nn.Module):
-    def __init__(self, input_size, hidden_size, weight):
+    def __init__(self, input_size, hidden_size, weight, num_layers=3):
         super(EncoderRNN, self).__init__()
         self.hidden_size = hidden_size
 
-        self.embedding = nn.Embedding(input_size, hidden_size, _weight=weight)
-        self.gru = nn.GRU(hidden_size, hidden_size, batch_first=True)
+        self.embedding = nn.Embedding(input_size, 100, _weight=weight, _freeze=True)
+        self.linear = nn.Linear(100, hidden_size)
+        self.activation = nn.LeakyReLU(0.03)
+        self.gru = nn.GRU(hidden_size, hidden_size, batch_first=True, num_layers=num_layers)
 
     def forward(self, input):
-        embedded = self.embedding(input)
+        embedded = self.activation(self.linear(self.embedding(input)))
         output, hidden = self.gru(embedded)
         return output, hidden
 
@@ -65,6 +67,9 @@ class BahdanauAttention(nn.Module):
         self.V = nn.Linear(hidden_size, 1)
 
     def forward(self, query, values, mask):
+        
+        query = query.sum(dim=1).unsqueeze(1) 
+        # take last layer activations only
         # Additive attention
         scores = self.V(torch.tanh(self.W1(query) + self.W2(values)))
         scores = scores.squeeze(2).unsqueeze(1) # [B, M, 1] -> [B, 1, M]
@@ -90,11 +95,13 @@ class BahdanauAttention(nn.Module):
 
 
 class AttnDecoder(nn.Module):
-    def __init__(self, hidden_size, output_size, weight):
+    def __init__(self, hidden_size, output_size, num_layers, weight):
         super(AttnDecoder, self).__init__()
-        self.embedding = nn.Embedding(output_size, hidden_size, _weight=weight)
+        self.embedding = nn.Embedding(output_size, 100, _weight=weight, _freeze=True)
+        self.linear = nn.Linear(100, hidden_size)
+        self.activation = nn.LeakyReLU(0.03)
         self.attention = BahdanauAttention(hidden_size)
-        self.gru = nn.GRU(2 * hidden_size, hidden_size, batch_first=True)
+        self.gru = nn.GRU(2 * hidden_size, hidden_size, batch_first=True, num_layers=num_layers)
         self.out = nn.Linear(hidden_size, output_size)
 
 
@@ -126,7 +133,7 @@ class AttnDecoder(nn.Module):
         # encoder_outputs: [B, Seq, D]
         query = hidden.permute(1, 0, 2) # [1, B, D] --> [B, 1, D]
         context, attn_weights = self.attention(query, encoder_outputs, input_mask)
-        embedded = self.embedding(input)
+        embedded = self.activation(self.linear(self.embedding(input)))
         attn = torch.cat((embedded, context), dim=2)
         output, hidden = self.gru(attn, hidden)
         output = self.out(output)
@@ -135,10 +142,10 @@ class AttnDecoder(nn.Module):
 
 
 class EncoderDecoder(nn.Module):
-    def __init__(self, hidden_size, input_vocab_size, output_vocab_size, weights):
+    def __init__(self, hidden_size, input_vocab_size, output_vocab_size, num_layers, weights):
         super(EncoderDecoder, self).__init__()
-        self.encoder = EncoderRNN(input_vocab_size, hidden_size, weights[0])
-        self.decoder = AttnDecoder(hidden_size, output_vocab_size, weights[1])
+        self.encoder = EncoderRNN(input_vocab_size, hidden_size, num_layers=num_layers, weight=weights[0])
+        self.decoder = AttnDecoder(hidden_size, output_vocab_size, num_layers=num_layers, weight=weights[1])
         # self.decoder = DecoderRNN(hidden_size, output_vocab_size)
 
     def forward(self, inputs, input_mask, max_len, targets=None):

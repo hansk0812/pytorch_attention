@@ -59,8 +59,8 @@ class EnTamV2Dataset(Dataset):
                  split, 
                  morphemes=False,
                  symbols=False, 
-                 buckets=[(5, 5), (10, 11), (12, 12), (14, 13), (18,15), (20,17), (24,25), (30,30), (45,50), (85,80)],
-                 #buckets=[[12,10],[15,12],[18,14],[21,16],[25,18],[28,21],[32,23],[37,26],[41,30],[50,35],[70,45],[100,100]], 
+                 #buckets=[(5, 5), (10, 11), (12, 12), (14, 13), (18,15), (20,17), (24,25), (30,30), (45,50), (85,80)],
+                 buckets=[[12,10],[15,12],[18,14],[21,16],[25,18],[28,21],[32,23],[37,26],[41,30],[50,35],[70,45],[100,100]], 
                  verbose=False,
                  max_vocab_size=150000,
                  vocabularies=(None, None),
@@ -293,7 +293,7 @@ class EnTamV2Dataset(Dataset):
         tgt_mask = np.array(tgt_mask)
 
         return np.int32(np_src), np_tgt, src_mask, tgt_mask
-    
+   
     def vocab_indices_to_sentence(self, sentence, language):
         # tensor to sentence
 
